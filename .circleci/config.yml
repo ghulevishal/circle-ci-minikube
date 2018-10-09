@@ -6,6 +6,56 @@ jobs:
   build:
     machine:
       image: circleci/classic:201808-01
+    working_directory: ~/repo
+          
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+          - v1-dependencies-{{ checksum "requirements.txt" }}
+          # fallback to using the latest cache if no exact match is found
+          - v1-dependencies-
+
+      - run:
+          name: install dependencies
+          command: |
+            sudo rm /var/lib/dpkg/lock
+            sudo dpkg --configure -a
+            sudo apt-get install software-properties-common
+            sudo add-apt-repository ppa:fkrull/deadsnakes
+            sudo apt-get update
+            sleep 5
+            sudo rm /var/lib/dpkg/lock
+            sudo dpkg --configure -a
+            sudo apt-get install python3.5
+            sleep 5
+            python -m pip install -r requirements.txt
+        
+      # run tests!
+      # this example uses Django's built-in test-runner
+      # other common Python testing frameworks include pytest and nose
+      # https://pytest.org
+      # https://nose.readthedocs.io
+      
+      - run:
+          name: install docker
+          command: |
+            # curl -fsSL get.docker.com | sh
+
+      - run:
+          name: run tests
+          command: |
+            python -m pytest tests/test_rsvpapp.py  
+            
+      - run:
+          name: build image
+          command: |
+            docker build -t vishalcloudyuga/rsvpapp:circleci .
+            cat my_password.txt | docker login --username vishalcloudyuga --password-stdin
+            docker push vishalcloudyuga/rsvpapp:circleci       
+  deploy:
+    machine:
+      image: circleci/classic:201808-01
     environment:
       K8S_VERSION: v1.10.0
       KUBECONFIG: /home/circleci/.kube/config
@@ -14,8 +64,11 @@ jobs:
       MINIKUBE_WANTREPORTERRORPROMPT: false
       MINIKUBE_HOME: /home/circleci
       CHANGE_MINIKUBE_NONE_USER: true
+
+    working_directory: ~/repo
+          
     steps:
-      - checkout
+      
       - run:
           name: setup kubectl
           command: |
@@ -58,7 +111,7 @@ jobs:
             helm init --wait --service-account tiller
       - run:
           name: deploy sample nginx
-          command: kubectl run circleci-example --image=nginx
+          command: kubectl apply -f k8s/rsvp.yaml
       - run:
           name: dump pods & services
           command: |
